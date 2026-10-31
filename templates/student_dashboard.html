@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Student Portal | Bleep Assignments</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Plus Jakarta Sans', sans-serif; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+  <!-- Top Navigation -->
+  <header class="border-b border-slate-800 bg-slate-900/60 backdrop-blur sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 flex items-center justify-center font-bold">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
+          </svg>
+        </div>
+        <div>
+          <span class="text-sm font-bold text-white tracking-wide block">Bleep Student Portal</span>
+          <span class="text-xs text-slate-400">Submission & Evaluation Tracking System</span>
+        </div>
+      </div>
+
+      <!-- User Profile Badge & Logout -->
+      <div class="flex items-center gap-4">
+        <div class="text-right hidden sm:block">
+          <span id="navStudentName" class="text-sm font-semibold text-white block">Loading...</span>
+          <span id="navStudentEmail" class="text-xs text-indigo-400 block font-mono">...</span>
+        </div>
+        <div class="h-8 w-[1px] bg-slate-800 hidden sm:block"></div>
+        <a href="/auth/logout" class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition">
+          Sign Out
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+    <!-- Welcome Banner with Student ID & Drive Folder Info -->
+    <div class="bg-gradient-to-r from-indigo-950/70 via-slate-900 to-slate-900 border border-indigo-900/40 rounded-2xl p-6 sm:p-8 flex flex-col md:flex-row md:items-center md:justify-between gap-6 shadow-xl">
+      <div>
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-medium mb-3">
+          <span class="w-2 h-2 rounded-full bg-indigo-400 animate-pulse"></span>
+          Student Workspace Active
+        </div>
+        <h1 class="text-2xl sm:text-3xl font-extrabold text-white">
+          Welcome, <span id="welcomeName" class="text-indigo-300">Student</span>!
+        </h1>
+        <p class="text-sm text-slate-400 mt-1 max-w-xl">
+          Notebooks are saved directly to your personal Google Drive folder. Timers, deadlines, resubmissions, and instructor remarks are tracked automatically.
+        </p>
+      </div>
+
+      <div class="bg-slate-800/80 border border-slate-700/80 rounded-xl p-4 flex flex-col gap-2 min-w-[240px]">
+        <div class="flex items-center justify-between text-xs">
+          <span class="text-slate-400">Student ID:</span>
+          <span id="badgeStudentID" class="font-mono font-bold text-white bg-slate-700 px-2 py-0.5 rounded">STU----</span>
+        </div>
+        <div class="flex items-center justify-between text-xs">
+          <span class="text-slate-400">Google Drive:</span>
+          <span class="text-emerald-400 font-semibold flex items-center gap-1">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Active
+          </span>
+        </div>
+        <div class="flex items-center justify-between text-xs">
+          <span class="text-slate-400">Instructor:</span>
+          <span class="text-slate-200">Aman Sah</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Active Timer Card (Shown when a project timer is active) -->
+    <div id="activeTimerCard" class="hidden bg-slate-900 border-2 border-indigo-500/50 rounded-2xl p-6 shadow-2xl relative overflow-hidden">
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div>
+          <div class="flex items-center gap-2 text-xs font-semibold text-indigo-400 uppercase tracking-wider mb-1">
+            <span class="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping"></span>
+            Project In Progress & Timer Running
+          </div>
+          <h2 id="timerProjectTitle" class="text-xl font-bold text-white">Project_01_EDA</h2>
+          <p class="text-xs text-slate-400 mt-1">Submit or resubmit your completed <code class="text-indigo-300 font-mono">.ipynb</code> notebook.</p>
+        </div>
+
+        <div class="flex items-center gap-6 bg-slate-950 border border-slate-800 px-6 py-4 rounded-xl">
+          <div class="text-center">
+            <span class="text-[10px] uppercase font-bold text-slate-500 block">Timer Elapsed</span>
+            <span id="timerDisplay" class="font-mono text-3xl font-extrabold text-indigo-400">00:00:00</span>
+          </div>
+          <div class="h-10 w-[1px] bg-slate-800"></div>
+          <div class="text-center">
+            <span class="text-[10px] uppercase font-bold text-slate-500 block">Deadline</span>
+            <span id="timerDeadlineDisplay" class="font-mono text-xs font-bold text-amber-400">Loading...</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Submission Dropzone Form -->
+      <form id="submissionForm" class="mt-6 pt-6 border-t border-slate-800 space-y-4">
+        <input type="hidden" id="formProjectTitle">
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- File Upload Input -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-2">Upload Notebook (.ipynb or .zip)</label>
+            <div class="border-2 border-dashed border-slate-700 hover:border-indigo-500 bg-slate-950/60 rounded-xl p-4 text-center cursor-pointer transition" onclick="document.getElementById('fileInput').click()">
+              <input type="file" id="fileInput" accept=".ipynb,.zip" required class="hidden" onchange="handleFileSelect(this)">
+              <svg class="w-8 h-8 mx-auto text-slate-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+              </svg>
+              <span id="fileLabel" class="text-sm text-slate-300 font-medium block">Click to select notebook</span>
+              <span class="text-xs text-slate-500 block mt-1">Accepts .ipynb Jupyter notebooks</span>
+            </div>
+          </div>
+
+          <!-- Student Remarks -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-2">Student Remarks / Summary</label>
+            <textarea id="studentRemarks" rows="4" placeholder="Explain your methodology, challenges overcome, and key findings..." class="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between pt-2">
+          <span id="versionHint" class="text-xs text-slate-400">Submission will automatically increment version tag (e.g. v1, v2)</span>
+          <button type="submit" id="submitNotebookBtn" class="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2.5 px-6 rounded-xl transition duration-200 shadow-lg shadow-indigo-600/30 flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+            </svg>
+            <span>Submit to Google Drive</span>
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Assigned Projects List -->
+    <div>
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h2 class="text-xl font-bold text-white">Assigned Projects</h2>
+          <p class="text-xs text-slate-400">Select a project to start its timer, or submit / resubmit your work.</p>
+        </div>
+      </div>
+
+      <div id="projectsGrid" class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 animate-pulse h-48"></div>
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 animate-pulse h-48"></div>
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 animate-pulse h-48"></div>
+      </div>
+    </div>
+
+    <!-- Activity & Audit Timeline Stream -->
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
+      <div class="flex items-center justify-between mb-6 border-b border-slate-800 pb-4">
+        <div>
+          <h2 class="text-lg font-bold text-white">Your Project Activity & Evaluation Timeline</h2>
+          <p class="text-xs text-slate-400">Every project selection, timer start, notebook upload, remark, and grade is logged here</p>
+        </div>
+        <button onclick="loadDashboardData()" class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition">
+          Refresh Stream
+        </button>
+      </div>
+
+      <div id="timelineStream" class="space-y-4">
+        <div class="text-center py-8 text-slate-500 text-xs">No activity logged yet. Start a project above!</div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    let timerInterval = null;
+    let timerStartTime = null;
+
+    function handleFileSelect(input) {
+      const fileLabel = document.getElementById('fileLabel');
+      if (input.files && input.files[0]) {
+        fileLabel.textContent = `Selected: ${input.files[0].name} (${(input.files[0].size / 1024 / 1024).toFixed(2)} MB)`;
+        fileLabel.classList.add('text-indigo-400');
+      }
+    }
+
+    function formatDuration(seconds) {
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      const s = seconds % 60;
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    }
+
+    function startTimerUI(projectTitle, startTimeStr, deadlineStr, version = 1) {
+      const card = document.getElementById('activeTimerCard');
+      const titleElem = document.getElementById('timerProjectTitle');
+      const formProjectTitle = document.getElementById('formProjectTitle');
+      const deadlineElem = document.getElementById('timerDeadlineDisplay');
+      const versionHint = document.getElementById('versionHint');
+
+      titleElem.textContent = projectTitle;
+      formProjectTitle.value = projectTitle;
+      deadlineElem.textContent = deadlineStr || 'None set';
+      versionHint.textContent = `Submitting will tag this as version v${version + 1}`;
+
+      card.classList.remove('hidden');
+      card.scrollIntoView({ behavior: 'smooth' });
+
+      if (startTimeStr) {
+        timerStartTime = new Date(startTimeStr).getTime();
+      } else {
+        timerStartTime = Date.now();
+      }
+
+      if (timerInterval) clearInterval(timerInterval);
+      timerInterval = setInterval(() => {
+        const elapsedSecs = Math.floor((Date.now() - timerStartTime) / 1000);
+        document.getElementById('timerDisplay').textContent = formatDuration(Math.max(0, elapsedSecs));
+      }, 1000);
+    }
+
+    async function onStartProjectClick(projectTitle) {
+      const formData = new FormData();
+      formData.append('project_title', projectTitle);
+
+      try {
+        const resp = await fetch('/api/student/timer/start', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await resp.json();
+        if (resp.ok) {
+          startTimerUI(projectTitle, data.state?.timer_start, data.state?.deadline, data.state?.current_version || 0);
+          loadDashboardData();
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    function onUploadOrResubmitClick(projectTitle, startTimeStr, deadlineStr, version) {
+      startTimerUI(projectTitle, startTimeStr, deadlineStr, version);
+    }
+
+    async function loadDashboardData() {
+      try {
+        const resp = await fetch('/api/student/dashboard-data');
+        if (resp.status === 401) {
+          window.location.href = '/';
+          return;
+        }
+        const data = await resp.json();
+
+        // Update profile
+        document.getElementById('welcomeName').textContent = data.student.name || 'Student';
+        document.getElementById('navStudentName').textContent = data.student.name || 'Student';
+        document.getElementById('navStudentEmail').textContent = data.student.email;
+        document.getElementById('badgeStudentID').textContent = data.student.student_id;
+
+        // Render Projects
+        const grid = document.getElementById('projectsGrid');
+        grid.innerHTML = data.projects.map(p => {
+          const state = p.state || {};
+          const isStarted = state.status && state.status !== 'NOT_STARTED';
+          const isSubmitted = state.status === 'SUBMITTED' || state.status === 'RESUBMITTED';
+          const isGraded = state.status === 'GRADED' || state.status === 'COMPLETED';
+          const latestMarks = state.latest_marks;
+
+          return `
+            <div class="bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-2xl p-6 flex flex-col justify-between transition group shadow-lg">
+              <div>
+                <div class="flex items-center justify-between mb-3">
+                  <span class="text-xs font-mono font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2 py-0.5 rounded">${p.project_id}</span>
+                  <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full ${
+                    state.status === 'COMPLETED' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                    state.status === 'GRADED' ? 'bg-teal-500/10 text-teal-400 border border-teal-500/20' :
+                    state.status === 'SUBMITTED' || state.status === 'RESUBMITTED' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
+                    state.status === 'IN_PROGRESS' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' :
+                    'bg-slate-800 text-slate-400'
+                  }">
+                    ${state.status || 'NOT_STARTED'}
+                  </span>
+                </div>
+
+                <h3 class="text-lg font-bold text-white group-hover:text-indigo-300 transition">${p.title}</h3>
+                <p class="text-xs text-slate-400 mt-2 line-clamp-2">${p.description}</p>
+
+                <!-- Status Metadata Box -->
+                <div class="mt-4 p-3 bg-slate-950/70 border border-slate-800/80 rounded-xl space-y-1.5 text-xs">
+                  <div class="flex justify-between">
+                    <span class="text-slate-500">Version:</span>
+                    <span class="text-white font-mono font-bold">${state.current_version > 0 ? 'v' + state.current_version : 'None'}</span>
+                  </div>
+                  <div class="flex justify-between">
+                    <span class="text-slate-500">Deadline:</span>
+                    <span class="text-amber-400 font-mono text-[11px]">${state.deadline || 'Starts on click'}</span>
+                  </div>
+                  ${state.extension_minutes_total > 0 ? `
+                    <div class="flex justify-between text-amber-300 text-[10px]">
+                      <span>Extension:</span>
+                      <span>+${state.extension_minutes_total} mins granted</span>
+                    </div>
+                  ` : ''}
+                  ${latestMarks !== null && latestMarks !== undefined && latestMarks !== '' ? `
+                    <div class="flex justify-between pt-1 border-t border-slate-800">
+                      <span class="text-slate-400">Score:</span>
+                      <span class="text-emerald-400 font-bold">${latestMarks} / ${state.max_marks}</span>
+                    </div>
+                  ` : ''}
+                </div>
+              </div>
+
+              <div class="mt-6 pt-4 border-t border-slate-800 flex items-center justify-between">
+                ${!isStarted ? `
+                  <button onclick="onStartProjectClick('${p.title}')" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold py-2.5 px-4 rounded-xl transition shadow-md shadow-indigo-600/20 flex items-center justify-center gap-1.5">
+                    Start Project & Timer
+                  </button>
+                ` : `
+                  <button onclick="onUploadOrResubmitClick('${p.title}', '${state.timer_start || ''}', '${state.deadline || ''}', ${state.current_version || 0})" class="w-full bg-slate-800 hover:bg-slate-700 text-indigo-300 text-xs font-semibold py-2.5 px-4 rounded-xl transition border border-indigo-500/30 flex items-center justify-center gap-1.5">
+                    ${isSubmitted || isGraded ? 'Upload Resubmission' : 'Submit Notebook'}
+                  </button>
+                `}
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        // Render Timeline
+        const stream = document.getElementById('timelineStream');
+        if (data.timeline_events && data.timeline_events.length > 0) {
+          stream.innerHTML = data.timeline_events.map(e => `
+            <div class="flex items-start gap-4 p-4 rounded-xl bg-slate-950 border border-slate-800 text-xs">
+              <span class="font-mono text-slate-500 whitespace-nowrap">${e.timestamp}</span>
+              <span class="px-2 py-0.5 rounded font-bold uppercase text-[10px] ${
+                e.event_type.includes('DEADLINE') ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
+                e.event_type.includes('NOTEBOOK') ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
+                e.event_type.includes('MARKS') ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'
+              }">${e.event_type}</span>
+              <span class="text-white font-medium">${e.project_title}:</span>
+              <span class="text-slate-300 flex-1">${e.description}</span>
+              <span class="text-slate-500 font-mono text-[11px]">${e.actor}</span>
+            </div>
+          `).join('');
+        } else {
+          stream.innerHTML = `<div class="text-center py-8 text-slate-500 text-xs">No activity recorded yet. Start a project above to create your first milestone!</div>`;
+        }
+
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    // Submit Notebook
+    document.getElementById('submissionForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fileInput = document.getElementById('fileInput');
+      const remarks = document.getElementById('studentRemarks').value;
+      const projectTitle = document.getElementById('formProjectTitle').value;
+      const submitBtn = document.getElementById('submitNotebookBtn');
+
+      if (!fileInput.files || !fileInput.files[0]) {
+        alert('Please choose a .ipynb file to upload.');
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = 'Uploading to Google Drive...';
+
+      const formData = new FormData();
+      formData.append('project_title', projectTitle);
+      formData.append('student_remarks', remarks);
+      formData.append('file', fileInput.files[0]);
+
+      try {
+        const resp = await fetch('/api/student/submit', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await resp.json();
+
+        if (resp.ok) {
+          alert(`Notebook successfully uploaded to Google Drive as ${data.version}!`);
+          document.getElementById('activeTimerCard').classList.add('hidden');
+          if (timerInterval) clearInterval(timerInterval);
+          loadDashboardData();
+        } else {
+          alert(data.detail || 'Failed to submit notebook.');
+        }
+      } catch (err) {
+        alert('Submission error. Check console.');
+        console.error(err);
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = 'Submit to Google Drive';
+      }
+    });
+
+    loadDashboardData();
+  </script>
+</body>
+</html>

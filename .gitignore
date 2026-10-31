@@ -1,0 +1,23 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# Secret & Token Cache (Keep private credentials out of git)
+.env
+google_admin_tokens.json
+client_secret_*.json
+*.secret.json
+
+# Local editor configurations
+.vscode/
+.idea/
+*.swp

@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: bleep-student-portal
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn main:app --host 0.0.0.0 --port $PORT"
+    autoDeploy: true
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ADMIN_EMAIL
+        value: "amansah1717@gmail.com"
+      - key: ADMIN_PASSWORD
+        value: "Amansah@1717"
+      - key: GOOGLE_CLIENT_ID
+        value: "676271340037-antv7v05emdfumpsu76a5qh2foq3oal0.apps.googleusercontent.com"
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_SHEET_ID
+        value: "1FVFLX_foJv_n_G5iEdcWC2T7Aa2o5vVgpgO0rKbig00"
+      - key: DRIVE_ROOT_FOLDER_NAME
+        value: "Bleep_Student_Assignments"
+      - key: GOOGLE_REFRESH_TOKEN
+        sync: false
+
