@@ -9,10 +9,12 @@ from google.auth.transport.requests import Request as GoogleRequest
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
+from fastapi import HTTPException, status
 from config import settings
 
+# Use drive.file (recommended by Google for app-specific folder access)
 SCOPES = [
-    "https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/drive.file",
     "https://www.googleapis.com/auth/spreadsheets",
     "openid",
     "https://www.googleapis.com/auth/userinfo.email",
@@ -25,7 +27,7 @@ class GoogleWorkspaceService:
         self._cached_creds: Optional[Credentials] = None
         self._root_folder_id: Optional[str] = None
         
-        # 1. Mock Student Roster
+        # 1. Student Roster
         self._mock_students: List[Dict[str, Any]] = [
             {
                 "student_id": "STU0001",
@@ -65,16 +67,22 @@ class GoogleWorkspaceService:
             }
         ]
 
-        # 2. Project State Matrix (Tracks Current Status, Timer, Deadline, Marks, Extensions)
+        # 2. Project State Matrix
         self._project_states: Dict[str, Dict[str, Any]] = {}
 
-        # 3. Append-only Event / Audit Log (Tracks every single activity)
+        # 3. Append-only Event / Audit Log
         self._audit_events: List[Dict[str, Any]] = []
 
     def _state_key(self, student_id: str, project_title: str) -> str:
         return f"{student_id}::{project_title.replace(' ', '_')}"
 
     def get_client_config(self) -> dict:
+        if os.path.exists(settings.GOOGLE_CLIENT_SECRETS_FILE):
+            try:
+                with open(settings.GOOGLE_CLIENT_SECRETS_FILE, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                pass
         return {
             "web": {
                 "client_id": settings.GOOGLE_CLIENT_ID,
@@ -131,6 +139,7 @@ class GoogleWorkspaceService:
         try:
             with open(settings.TOKEN_CACHE_FILE, "w", encoding="utf-8") as f:
                 json.dump(token_data, f, indent=2)
+            print(f"[Google Auth] Credentials successfully cached to {settings.TOKEN_CACHE_FILE}")
         except Exception as e:
             print(f"Warning: Could not save tokens file: {e}")
 
@@ -138,27 +147,31 @@ class GoogleWorkspaceService:
         if self._cached_creds and self._cached_creds.valid:
             return self._cached_creds
 
+        # 1. Check local token cache file
         if os.path.exists(settings.TOKEN_CACHE_FILE):
             try:
                 with open(settings.TOKEN_CACHE_FILE, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    creds = Credentials(
-                        token=data.get("token"),
-                        refresh_token=data.get("refresh_token") or settings.GOOGLE_REFRESH_TOKEN,
-                        token_uri=data.get("token_uri", "https://oauth2.googleapis.com/token"),
-                        client_id=settings.GOOGLE_CLIENT_ID,
-                        client_secret=settings.GOOGLE_CLIENT_SECRET,
-                        scopes=SCOPES,
-                    )
-                    if creds and creds.expired and creds.refresh_token:
-                        creds.refresh(GoogleRequest())
-                        self._save_credentials(creds)
-                    if creds and creds.valid:
-                        self._cached_creds = creds
-                        return creds
+                    refresh_token = data.get("refresh_token") or settings.GOOGLE_REFRESH_TOKEN
+                    if refresh_token:
+                        creds = Credentials(
+                            token=data.get("token"),
+                            refresh_token=refresh_token,
+                            token_uri=data.get("token_uri", "https://oauth2.googleapis.com/token"),
+                            client_id=settings.GOOGLE_CLIENT_ID,
+                            client_secret=settings.GOOGLE_CLIENT_SECRET,
+                            scopes=SCOPES,
+                        )
+                        if creds.expired or not creds.valid:
+                            creds.refresh(GoogleRequest())
+                            self._save_credentials(creds)
+                        if creds.valid:
+                            self._cached_creds = creds
+                            return creds
             except Exception as e:
-                print(f"Could not load cached tokens: {e}")
+                print(f"[Google Auth] Could not refresh cached tokens: {e}")
 
+        # 2. Check environment variable GOOGLE_REFRESH_TOKEN (Used in Render)
         if settings.GOOGLE_REFRESH_TOKEN:
             try:
                 creds = Credentials(
@@ -170,10 +183,11 @@ class GoogleWorkspaceService:
                     scopes=SCOPES,
                 )
                 creds.refresh(GoogleRequest())
-                self._cached_creds = creds
-                return creds
+                if creds.valid:
+                    self._cached_creds = creds
+                    return creds
             except Exception as e:
-                print(f"Could not refresh from env GOOGLE_REFRESH_TOKEN: {e}")
+                print(f"[Google Auth] Could not refresh from env GOOGLE_REFRESH_TOKEN: {e}")
 
         return None
 
@@ -182,7 +196,7 @@ class GoogleWorkspaceService:
         return creds is not None and creds.valid
 
     # ==========================================
-    # Google Drive Operations
+    # Google Drive Operations (Real Drive API)
     # ==========================================
     async def get_or_create_root_folder(self) -> str:
         if self._root_folder_id:
@@ -190,7 +204,10 @@ class GoogleWorkspaceService:
 
         creds = self.get_credentials()
         if not creds:
-            return "mock-root-folder-id"
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Google Drive is not yet linked. Please log into the Admin Dashboard as instructor Aman Sah (amansah1717@gmail.com) and click 'Authorize Google Drive'."
+            )
 
         service = build("drive", "v3", credentials=creds)
         folder_name = settings.DRIVE_ROOT_FOLDER_NAME
@@ -212,10 +229,13 @@ class GoogleWorkspaceService:
 
     async def get_or_create_student_folder(self, student_id: str, student_name: str) -> str:
         creds = self.get_credentials()
-        clean_name = f"{student_id}_{student_name.replace(' ', '_')}"
         if not creds:
-            return f"mock-folder-{clean_name}"
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Google Drive is not yet authorized. Please contact instructor Aman Sah."
+            )
 
+        clean_name = f"{student_id}_{student_name.replace(' ', '_')}"
         root_id = await self.get_or_create_root_folder()
         service = build("drive", "v3", credentials=creds)
         query = f"mimeType = 'application/vnd.google-apps.folder' and name = '{clean_name}' and '{root_id}' in parents and trashed = false"
@@ -235,10 +255,13 @@ class GoogleWorkspaceService:
 
     async def get_or_create_project_folder(self, student_folder_id: str, project_title: str) -> str:
         creds = self.get_credentials()
-        clean_title = project_title.replace(" ", "_")
         if not creds:
-            return f"mock-folder-{clean_title}"
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Google Drive is not yet authorized. Please contact instructor Aman Sah."
+            )
 
+        clean_title = project_title.replace(" ", "_")
         service = build("drive", "v3", credentials=creds)
         query = f"mimeType = 'application/vnd.google-apps.folder' and name = '{clean_title}' and '{student_folder_id}' in parents and trashed = false"
         results = service.files().list(q=query, spaces="drive", fields="files(id, name)").execute()
@@ -262,12 +285,15 @@ class GoogleWorkspaceService:
         student_folder_id: str,
         project_title: str,
     ) -> Dict[str, str]:
+        """
+        Uploads notebook directly to Google Drive folder and ensures viewable permissions.
+        """
         creds = self.get_credentials()
         if not creds:
-            return {
-                "file_id": f"mock-file-id-{filename}",
-                "web_view_url": f"https://drive.google.com/file/d/mock-file-{filename}/view",
-            }
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Google Drive storage is not yet connected. Please ask instructor Aman Sah to authorize Google Drive via the Admin Dashboard."
+            )
 
         project_folder_id = await self.get_or_create_project_folder(student_folder_id, project_title)
         service = build("drive", "v3", credentials=creds)
@@ -280,12 +306,27 @@ class GoogleWorkspaceService:
         uploaded = service.files().create(
             body=file_metadata,
             media_body=media,
-            fields="id, name, webViewLink",
+            fields="id, name, webViewLink, webContentLink",
         ).execute()
 
+        file_id = uploaded.get("id")
+
+        # Grant read access so students and instructor can view the submitted notebook
+        try:
+            service.permissions().create(
+                fileId=file_id,
+                body={"role": "reader", "type": "anyone"},
+                fields="id",
+            ).execute()
+        except Exception as perm_err:
+            print(f"Warning: Could not set public link permission on file {file_id}: {perm_err}")
+
+        web_view_url = uploaded.get("webViewLink") or f"https://drive.google.com/file/d/{file_id}/view"
+        print(f"[Google Drive Upload Success] File: {filename} | ID: {file_id} | Link: {web_view_url}")
+        
         return {
-            "file_id": uploaded.get("id"),
-            "web_view_url": uploaded.get("webViewLink") or f"https://drive.google.com/file/d/{uploaded.get('id')}/view",
+            "file_id": file_id,
+            "web_view_url": web_view_url,
         }
 
     # ==========================================
@@ -301,18 +342,6 @@ class GoogleWorkspaceService:
         actor: str = "STUDENT",
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """
-        Record an immutable event in the audit trail:
-        - PROJECT_SELECTED
-        - TIMER_STARTED
-        - NOTEBOOK_UPLOADED
-        - NOTEBOOK_RESUBMITTED
-        - DEADLINE_EXTENDED
-        - STATUS_CHANGED
-        - REMARKS_ADDED
-        - MARKS_EVALUATED
-        - PROJECT_COMPLETED
-        """
         now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         event_id = f"EVT-{len(self._audit_events) + 1:05d}"
         
@@ -328,8 +357,6 @@ class GoogleWorkspaceService:
             "metadata": metadata or {},
         }
         self._audit_events.append(event)
-        
-        # Sync to Google Sheets tab Activity_Audit_Log asynchronously
         asyncio.create_task(self._sync_event_to_sheet(event))
         return event
 
@@ -358,19 +385,18 @@ class GoogleWorkspaceService:
                 body={"values": [row]},
             ).execute()
         except Exception as e:
-            print(f"Error syncing event to Google Sheets: {e}")
+            print(f"Notice: Google Sheets audit sync: {e}")
 
     async def get_audit_events(self, student_id: Optional[str] = None, project_title: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Return event log, optionally filtered by student and project."""
         events = self._audit_events
         if student_id:
             events = [e for e in events if e["student_id"] == student_id]
         if project_title:
             events = [e for e in events if e["project_title"] == project_title]
-        return list(reversed(events))  # Newest first
+        return list(reversed(events))
 
     # ==========================================
-    # Project State & Lifecycle Tracking
+    # Project State Tracking
     # ==========================================
     async def get_or_create_project_state(
         self,
@@ -386,7 +412,7 @@ class GoogleWorkspaceService:
                 "student_id": student_id,
                 "student_name": student_name,
                 "project_title": project_title,
-                "status": "NOT_STARTED",  # NOT_STARTED, IN_PROGRESS, SUBMITTED, RESUBMITTED, UNDER_REVIEW, GRADED, COMPLETED
+                "status": "NOT_STARTED",
                 "timer_start": None,
                 "timer_end": None,
                 "deadline": None,
@@ -394,10 +420,10 @@ class GoogleWorkspaceService:
                 "extension_minutes_total": 0,
                 "extension_history": [],
                 "current_version": 0,
-                "submissions": [],  # List of {version, file_id, file_url, timestamp, remarks}
+                "submissions": [],
                 "student_remarks_history": [],
                 "instructor_remarks_history": [],
-                "evaluation_history": [],  # List of {marks, max_marks, remarks, timestamp}
+                "evaluation_history": [],
                 "latest_marks": None,
                 "max_marks": 100,
                 "time_spent_minutes": 0,
@@ -417,7 +443,6 @@ class GoogleWorkspaceService:
         now = datetime.now(timezone.utc)
         now_str = now.strftime("%Y-%m-%d %H:%M:%S")
 
-        # If already started, return existing timer
         if state["timer_start"] and state["status"] in ["IN_PROGRESS", "SUBMITTED", "RESUBMITTED"]:
             return state
 
@@ -429,7 +454,6 @@ class GoogleWorkspaceService:
         state["status"] = "IN_PROGRESS"
         state["updated_at"] = now_str
 
-        # Log Events
         await self.log_event(
             student_id=student_id,
             student_name=student_name,
@@ -459,7 +483,6 @@ class GoogleWorkspaceService:
         reason: str,
         admin_name: str = "Aman Sah",
     ) -> Dict[str, Any]:
-        """Grant a deadline extension with instructor reason."""
         student = await self.get_student_by_id(student_id)
         student_name = student["full_name"] if student else "Student"
         state = await self.get_or_create_project_state(student_id, student_name, project_title)
@@ -467,7 +490,6 @@ class GoogleWorkspaceService:
         now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         state["extension_minutes_total"] += extension_minutes
         
-        # Recalculate deadline
         if state["timer_start"]:
             start_dt = datetime.strptime(state["timer_start"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
             new_deadline = start_dt + timedelta(minutes=state["allowed_duration_minutes"] + state["extension_minutes_total"])
@@ -505,7 +527,6 @@ class GoogleWorkspaceService:
         drive_file_url: str,
         student_remarks: str,
     ) -> Dict[str, Any]:
-        """Handles both first submission (v1) and resubmissions (v2, v3...)."""
         state = await self.get_or_create_project_state(student_id, student_name, project_title)
         now = datetime.now(timezone.utc)
         now_str = now.strftime("%Y-%m-%d %H:%M:%S")
@@ -514,7 +535,6 @@ class GoogleWorkspaceService:
         version_str = f"v{state['current_version']}"
         is_resubmission = state["current_version"] > 1
 
-        # Calculate duration
         duration_mins = 0
         if state["timer_start"]:
             try:
@@ -544,7 +564,6 @@ class GoogleWorkspaceService:
                 "timestamp": now_str,
             })
 
-        # Event type
         event_type = "NOTEBOOK_RESUBMITTED" if is_resubmission else "NOTEBOOK_UPLOADED"
         await self.log_event(
             student_id=student_id,
@@ -568,7 +587,6 @@ class GoogleWorkspaceService:
         new_status: str = "GRADED",
         admin_name: str = "Aman Sah",
     ) -> Dict[str, Any]:
-        """Evaluate project, update marks, append to evaluation history, and log status change."""
         student = await self.get_student_by_id(student_id)
         student_name = student["full_name"] if student else "Student"
         state = await self.get_or_create_project_state(student_id, student_name, project_title)
@@ -627,7 +645,6 @@ class GoogleWorkspaceService:
         reason: str,
         actor: str = "INSTRUCTOR",
     ) -> Dict[str, Any]:
-        """Change project status (e.g., UNDER_REVIEW, COMPLETED, REOPENED)."""
         student = await self.get_student_by_id(student_id)
         student_name = student["full_name"] if student else "Student"
         state = await self.get_or_create_project_state(student_id, student_name, project_title)
@@ -650,7 +667,6 @@ class GoogleWorkspaceService:
         return state
 
     async def _sync_state_to_sheet(self, state: Dict[str, Any]):
-        """Persist current project state to Google Sheets tab Projects_Status."""
         creds = self.get_credentials()
         if not creds:
             return
@@ -684,7 +700,7 @@ class GoogleWorkspaceService:
                 body={"values": [row]},
             ).execute()
         except Exception as e:
-            print(f"Error syncing project state to Google Sheets: {e}")
+            print(f"Notice: Google Sheets state sync: {e}")
 
     # ==========================================
     # Student Roster Access

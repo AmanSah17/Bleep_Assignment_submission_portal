@@ -27,7 +27,7 @@
       </div>
 
       <div class="flex items-center gap-4">
-        <a href="/auth/admin/oauth-drive" class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 transition flex items-center gap-1.5">
+        <a href="/auth/admin/oauth-drive" id="btnTopAuthorizeDrive" class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 transition flex items-center gap-1.5">
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
           Authorize Google Drive
         </a>
@@ -39,6 +39,33 @@
   </header>
 
   <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+    <!-- Google Drive Vault Connection Banner -->
+    <div id="driveStatusBanner" class="p-6 rounded-2xl border shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-900 border-slate-800">
+      <div class="flex items-start gap-4">
+        <div id="driveStatusIcon" class="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center flex-shrink-0">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+        </div>
+        <div>
+          <h3 id="driveStatusTitle" class="text-base font-bold text-white">Checking Google Drive Connection...</h3>
+          <p id="driveStatusDesc" class="text-xs text-slate-400 mt-1">Please wait while checking connection to Google Drive API.</p>
+          <div id="refreshTokenContainer" class="hidden mt-3 p-3 bg-slate-950 border border-slate-800 rounded-xl">
+            <span class="text-[11px] font-semibold text-emerald-400 block mb-1">🔑 Google Refresh Token (Copy for Render Environment Variable: GOOGLE_REFRESH_TOKEN):</span>
+            <div class="flex items-center gap-2">
+              <input type="text" id="refreshTokenInput" readonly class="w-full bg-slate-900 border border-slate-700 text-xs text-slate-300 font-mono px-3 py-1.5 rounded-lg select-all">
+              <button onclick="copyRefreshToken()" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold whitespace-nowrap">Copy</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="driveActionContainer">
+        <a href="/auth/admin/oauth-drive" id="btnConnectDriveAction" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold py-2.5 px-5 rounded-xl transition shadow-lg shadow-indigo-600/30 flex items-center gap-2 whitespace-nowrap">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
+          Connect Google Drive Vault
+        </a>
+      </div>
+    </div>
+
     <!-- Metrics Grid -->
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
       <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg">
@@ -222,6 +249,13 @@
   </div>
 
   <script>
+    function copyRefreshToken() {
+      const input = document.getElementById('refreshTokenInput');
+      input.select();
+      navigator.clipboard.writeText(input.value);
+      alert('Refresh token copied to clipboard! Paste it into your Render Environment Variables as GOOGLE_REFRESH_TOKEN.');
+    }
+
     function switchTab(tabId) {
       document.getElementById('projectsTab').classList.add('hidden');
       document.getElementById('rosterTab').classList.add('hidden');
@@ -265,6 +299,9 @@
 
     async function loadAdminData() {
       try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const refTokenParam = urlParams.get('refresh_token');
+
         // 1. Overview metrics
         const ovResp = await fetch('/api/admin/overview');
         if (ovResp.status === 401 || ovResp.status === 403) {
@@ -276,6 +313,39 @@
         document.getElementById('metricInProgress').textContent = ov.in_progress;
         document.getElementById('metricAwaitingGrading').textContent = ov.awaiting_grading;
         document.getElementById('metricGraded').textContent = ov.graded;
+
+        // Drive Connection Status Banner
+        const banner = document.getElementById('driveStatusBanner');
+        const icon = document.getElementById('driveStatusIcon');
+        const title = document.getElementById('driveStatusTitle');
+        const desc = document.getElementById('driveStatusDesc');
+        const actionBtn = document.getElementById('btnConnectDriveAction');
+        const refContainer = document.getElementById('refreshTokenContainer');
+        const refInput = document.getElementById('refreshTokenInput');
+
+        if (ov.google_connected) {
+          banner.className = "p-6 rounded-2xl border shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4 bg-emerald-950/30 border-emerald-800/60";
+          icon.className = "w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center flex-shrink-0";
+          icon.innerHTML = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>`;
+          title.textContent = "Google Drive Storage Vault Connected";
+          title.className = "text-base font-bold text-emerald-300";
+          desc.textContent = "Student notebook submissions will be uploaded directly to your Google Drive (Folder: Bleep_Student_Assignments).";
+          actionBtn.textContent = "Re-Authorize Google Drive";
+          actionBtn.className = "bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold py-2.5 px-4 rounded-xl transition border border-slate-700 flex items-center gap-2";
+
+          if (refTokenParam) {
+            refContainer.classList.remove('hidden');
+            refInput.value = refTokenParam;
+          }
+        } else {
+          banner.className = "p-6 rounded-2xl border shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4 bg-amber-950/40 border-amber-800/60";
+          icon.className = "w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center flex-shrink-0";
+          title.textContent = "Action Required: Google Drive Storage Not Linked";
+          title.className = "text-base font-bold text-amber-300";
+          desc.textContent = "Click 'Connect Google Drive Vault' below to grant permission so student notebook uploads save directly to your Google Drive.";
+          actionBtn.textContent = "Connect Google Drive Vault";
+          actionBtn.className = "bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold py-2.5 px-5 rounded-xl transition shadow-lg shadow-indigo-600/30 flex items-center gap-2";
+        }
 
         // 2. Projects & Submissions
         const prResp = await fetch('/api/admin/projects');
@@ -314,7 +384,7 @@
                 <td class="px-5 py-4">
                   ${latestSub ? `
                     <a href="${latestSub.file_url}" target="_blank" class="inline-flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 underline font-medium">
-                      Drive File (${latestSub.version})
+                      Drive Notebook (${latestSub.version})
                     </a>
                   ` : '<span class="text-xs text-slate-600 italic">No upload</span>'}
                 </td>
@@ -472,4 +542,3 @@
   </script>
 </body>
 </html>
-
