@@ -21,3 +21,8 @@ client_secret_*.json
 .vscode/
 .idea/
 *.swp
+
+# Local uploads
+uploads/
+test_notebook.ipynb
+test_upload.py

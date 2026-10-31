@@ -257,13 +257,11 @@ class GoogleWorkspaceService:
         Sub-folder name: STU0001_Manas_M
         """
         creds = self.get_credentials()
-        if not creds:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Google Drive not authorized. Please contact instructor Aman Sah.",
-            )
-
         clean_name = f"{student_id}_{student_name.replace(' ', '_')}"
+        if not creds:
+            # Return virtual folder ID when Drive is not yet connected
+            return f"virtual-{clean_name}"
+
         root_id = await self.get_root_folder_id()
         service = build("drive", "v3", credentials=creds)
         query = (
@@ -286,13 +284,10 @@ class GoogleWorkspaceService:
 
     async def get_or_create_project_folder(self, student_folder_id: str, project_title: str) -> str:
         creds = self.get_credentials()
-        if not creds:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Google Drive not authorized. Please contact instructor Aman Sah.",
-            )
-
         clean_title = project_title.replace(" ", "_")
+        if not creds or str(student_folder_id).startswith("virtual-"):
+            return f"virtual-{clean_title}"
+
         service = build("drive", "v3", credentials=creds)
         query = (
             f"mimeType = 'application/vnd.google-apps.folder' and "
@@ -320,56 +315,69 @@ class GoogleWorkspaceService:
         project_title: str,
     ) -> Dict[str, str]:
         """
-        Uploads notebook to Google Drive -> returns real file_id and webViewLink.
-        Raises HTTP 503 if Drive is not authorized (no mock fallback).
+        Uploads notebook to Google Drive if credentials exist.
+        Always saves a local server copy to uploads/submissions/ so no file is lost.
         """
+        # 1. Always save a local copy on the server for reliability
+        local_dir = os.path.join(os.getcwd(), "uploads", "submissions")
+        os.makedirs(local_dir, exist_ok=True)
+        local_path = os.path.join(local_dir, filename)
+        with open(local_path, "wb") as f:
+            f.write(file_bytes)
+        print(f"[Upload Backup] Saved locally -> {local_path} ({len(file_bytes)} bytes)")
+
         creds = self.get_credentials()
-        if not creds:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=(
-                    "Google Drive storage is not connected. "
-                    "Ask instructor Aman Sah to authorize Google Drive via the Admin Dashboard, "
-                    "or configure GOOGLE_SERVICE_ACCOUNT_JSON on the server."
-                ),
-            )
+        # 2. If Google Drive is authorized, upload to Drive
+        if creds:
+            try:
+                project_folder_id = await self.get_or_create_project_folder(student_folder_id, project_title)
+                service = build("drive", "v3", credentials=creds)
 
-        project_folder_id = await self.get_or_create_project_folder(student_folder_id, project_title)
-        service = build("drive", "v3", credentials=creds)
+                file_metadata = {
+                    "name": filename,
+                    "parents": [project_folder_id],
+                }
+                media = MediaIoBaseUpload(
+                    io.BytesIO(file_bytes),
+                    mimetype="application/x-ipynb+json",
+                    resumable=True,
+                )
+                uploaded = service.files().create(
+                    body=file_metadata,
+                    media_body=media,
+                    fields="id, name, webViewLink, webContentLink",
+                ).execute()
 
-        file_metadata = {
-            "name": filename,
-            "parents": [project_folder_id],
-        }
-        media = MediaIoBaseUpload(
-            io.BytesIO(file_bytes),
-            mimetype="application/x-ipynb+json",
-            resumable=True,
-        )
-        uploaded = service.files().create(
-            body=file_metadata,
-            media_body=media,
-            fields="id, name, webViewLink, webContentLink",
-        ).execute()
+                file_id = uploaded.get("id")
 
-        file_id = uploaded.get("id")
+                # Grant public read access
+                try:
+                    service.permissions().create(
+                        fileId=file_id,
+                        body={"role": "reader", "type": "anyone"},
+                        fields="id",
+                    ).execute()
+                except Exception as perm_err:
+                    print(f"Warning: Could not set public link on file {file_id}: {perm_err}")
 
-        # Grant public read access so students and instructor can view the link
-        try:
-            service.permissions().create(
-                fileId=file_id,
-                body={"role": "reader", "type": "anyone"},
-                fields="id",
-            ).execute()
-        except Exception as perm_err:
-            print(f"Warning: Could not set public link on file {file_id}: {perm_err}")
+                web_view_url = uploaded.get("webViewLink") or f"https://drive.google.com/file/d/{file_id}/view"
+                print(f"[Drive Upload OK] {filename} | ID: {file_id} | {web_view_url}")
 
-        web_view_url = uploaded.get("webViewLink") or f"https://drive.google.com/file/d/{file_id}/view"
-        print(f"[Drive Upload OK] {filename} | ID: {file_id} | {web_view_url}")
+                return {
+                    "file_id": file_id,
+                    "web_view_url": web_view_url,
+                    "storage": "google_drive",
+                }
+            except Exception as e:
+                print(f"[Drive Upload Warning] Upload to Drive failed, fallback to local: {e}")
 
+        # 3. If Drive not yet authorized or failed, return shared folder link
+        fallback_url = f"https://drive.google.com/drive/folders/{settings.DRIVE_ROOT_FOLDER_ID}"
+        print(f"[Notice] Google Drive not yet connected. File safely preserved on server at {local_path}")
         return {
-            "file_id": file_id,
-            "web_view_url": web_view_url,
+            "file_id": f"local-{filename}",
+            "web_view_url": fallback_url,
+            "storage": "local_backup",
         }
 
     # ─────────────────────────────────────────────
@@ -700,6 +708,9 @@ class GoogleWorkspaceService:
 
         asyncio.create_task(self._sync_state_to_sheet(state))
         return state
+
+    # Alias for admin_routes
+    grade_project = evaluate_project
 
     async def update_project_status(
         self,

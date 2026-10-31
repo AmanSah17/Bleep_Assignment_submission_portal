@@ -1,9 +1,12 @@
 from fastapi import APIRouter, Depends, Form, HTTPException, status
 from typing import Optional, List
+import json
+from config import settings
 from services.auth_service import require_admin, generate_student_password, get_password_hash
 from services.google_service import google_service
 
 router = APIRouter(prefix="/api/admin", tags=["Admin Portal"])
+
 
 @router.get("/overview")
 async def get_admin_overview(admin: dict = Depends(require_admin)):
@@ -11,11 +14,11 @@ async def get_admin_overview(admin: dict = Depends(require_admin)):
     students = await google_service.get_all_students()
     project_states = await google_service.get_all_project_states()
     all_events = await google_service.get_audit_events()
-    
+
     graded_count = sum(1 for s in project_states if s.get("status") in ["GRADED", "COMPLETED"])
     submitted_count = sum(1 for s in project_states if s.get("status") in ["SUBMITTED", "RESUBMITTED"])
     in_progress_count = sum(1 for s in project_states if s.get("status") == "IN_PROGRESS")
-    
+
     return {
         "admin_email": admin.get("sub"),
         "admin_name": admin.get("name", "Aman Sah"),
@@ -27,11 +30,13 @@ async def get_admin_overview(admin: dict = Depends(require_admin)):
         "total_events_logged": len(all_events),
     }
 
+
 @router.get("/students")
 async def list_students(admin: dict = Depends(require_admin)):
     """List all students registered in the database/sheet."""
     students = await google_service.get_all_students()
     return {"students": students}
+
 
 @router.post("/students/generate-passwords")
 async def generate_passwords_for_students(admin: dict = Depends(require_admin)):
@@ -45,7 +50,7 @@ async def generate_passwords_for_students(admin: dict = Depends(require_admin)):
     for s in students:
         temp_pass = generate_student_password(length=10)
         p_hash = get_password_hash(temp_pass)
-        
+
         s["temp_password"] = temp_pass
         s["password_hash"] = p_hash
         updated_students.append(s)
@@ -63,14 +68,16 @@ async def generate_passwords_for_students(admin: dict = Depends(require_admin)):
                 "temp_password": s["temp_password"],
             }
             for s in updated_students
-        ]
+        ],
     }
+
 
 @router.get("/projects")
 async def list_all_project_states(admin: dict = Depends(require_admin)):
     """Returns live state of every student's project: status, timer, marks, remarks, and extensions."""
     states = await google_service.get_all_project_states()
     return {"project_states": states}
+
 
 @router.get("/audit-events")
 async def list_audit_events(
@@ -81,6 +88,7 @@ async def list_audit_events(
     """Retrieve full audit log across all students or filtered by student/project."""
     events = await google_service.get_audit_events(student_id=student_id, project_title=project_title)
     return {"events": events}
+
 
 @router.post("/extend-deadline")
 async def extend_deadline(
@@ -96,7 +104,7 @@ async def extend_deadline(
         student_id=student_id,
         project_title=project_title,
         extension_minutes=extension_minutes,
-        reason=reason,
+        admin_note=reason,
         admin_name=admin_name,
     )
     return {
@@ -104,6 +112,7 @@ async def extend_deadline(
         "message": f"Extended deadline by {extension_minutes} minutes.",
         "state": updated_state,
     }
+
 
 @router.post("/grade")
 async def grade_submission(
@@ -124,10 +133,10 @@ async def grade_submission(
     admin_name = admin.get("name", "Aman Sah")
     new_status = "COMPLETED" if mark_as_completed else "GRADED"
 
-    updated_state = await google_service.grade_project(
+    updated_state = await google_service.evaluate_project(
         student_id=student_id,
         project_title=project_title,
-        marks=marks,
+        marks=int(marks) if marks.isdigit() else 0,
         instructor_remarks=instructor_remarks,
         new_status=new_status,
         admin_name=admin_name,
@@ -138,6 +147,7 @@ async def grade_submission(
         "message": "Evaluation and instructor feedback recorded successfully!",
         "state": updated_state,
     }
+
 
 @router.post("/change-status")
 async def change_status(
@@ -156,3 +166,40 @@ async def change_status(
         actor=admin.get("name", "Aman Sah"),
     )
     return {"status": "success", "state": updated_state}
+
+
+@router.post("/set-token")
+async def set_google_token(
+    refresh_token: str = Form(...),
+    admin: dict = Depends(require_admin),
+):
+    """Allows admin to directly store a Google refresh token."""
+    clean_token = refresh_token.strip()
+    if not clean_token:
+        raise HTTPException(status_code=400, detail="Token cannot be empty")
+
+    settings.GOOGLE_REFRESH_TOKEN = clean_token
+    token_data = {
+        "token": None,
+        "refresh_token": clean_token,
+        "token_uri": "https://oauth2.googleapis.com/token",
+        "client_id": settings.GOOGLE_CLIENT_ID,
+        "client_secret": settings.GOOGLE_CLIENT_SECRET,
+        "scopes": [
+            "https://www.googleapis.com/auth/drive",
+            "https://www.googleapis.com/auth/spreadsheets",
+            "openid",
+            "https://www.googleapis.com/auth/userinfo.email",
+            "https://www.googleapis.com/auth/userinfo.profile",
+        ],
+    }
+    with open(settings.TOKEN_CACHE_FILE, "w", encoding="utf-8") as f:
+        json.dump(token_data, f, indent=2)
+
+    google_service._cached_creds = None
+    is_valid = google_service.is_google_connected()
+    return {
+        "status": "success",
+        "message": "Refresh token saved successfully!",
+        "google_connected": is_valid,
+    }
